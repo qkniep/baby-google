@@ -19,7 +19,12 @@ func main() {
 	var visitLast = false
 	var bytesDownloaded int64
 
-	for len(toVisit) > 0 {
+	// index structures
+	var links = make(map[string][]string, 0)
+	//var backLinks = make(map[string][]string, 0)
+
+	//for len(toVisit) > 0 {
+	for len(visited) < 1000 {
 		if visitLast {
 			current, toVisit = toVisit[len(toVisit)-1], toVisit[:len(toVisit)-1]
 		} else {
@@ -33,8 +38,8 @@ func main() {
 		visited[current] = true
 
 		// download current website
-		fmt.Println(current)
-		fmt.Println(len(toVisit))
+		fmt.Printf("Current website: %v\n", current)
+		fmt.Printf("Number of sites to vist: %v\n", len(toVisit))
 		res, err := http.Get(current)
 		if err != nil {
 			log.Println(err)
@@ -45,7 +50,8 @@ func main() {
 		// count bytes
 		body, err := ioutil.ReadAll(res.Body)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			continue
 		}
 		bytesDownloaded += int64(len(body))
 		fmt.Printf("Bytes downloaded: %v\n", bytesDownloaded)
@@ -71,8 +77,12 @@ func main() {
 					for _, attr := range t.Attr {
 						if attr.Key == "href" {
 							absURL, success := Resolve(current, attr.Val)
-							if success && !visited[absURL] {
-								toVisit = append(toVisit, absURL)
+							if success {
+								links[current] = append(links[current], absURL)
+								//backLinks[absURL] = append(backLinks[absURL], current)
+								if!visited[absURL] {
+									toVisit = append(toVisit, absURL)
+								}
 							}
 							//fmt.Printf("We found an anchor: %s\n", absURL)
 						}
@@ -82,4 +92,6 @@ func main() {
 			}
 		}
 	}
+
+	PageRank(links)
 }

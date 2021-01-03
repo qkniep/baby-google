@@ -3,11 +3,12 @@ package main
 import (
 	"fmt"
 	"net/url"
+	"strings"
 )
 
 // TODO
 func Resolve(website string, relative string) (string, bool) {
-	u,err := url.Parse(relative)
+	u,err := url.Parse(strings.TrimSpace(relative))
 	if err != nil {
 		fmt.Println(err)
 		return "", false
