@@ -1,17 +1,23 @@
 package main
 
 import (
-    "fmt"
-    "net/url"
+	"fmt"
+	"net/url"
 )
 
-func resolve(website string, relative string) *url.URL {
-    u,err := url.Parse(relative)
-    base,err := url.Parse(website)
+// TODO
+func Resolve(website string, relative string) (string, bool) {
+	u,err := url.Parse(relative)
+	if err != nil {
+		fmt.Println(err)
+		return "", false
+	}
 
-    if err!=nil {
-        fmt.Println(err)
-    }
+	base,err := url.Parse(website)
+	if err != nil {
+		fmt.Println(err)
+		return "", false
+	}
 
-    return base.ResolveReference(u)
+	return base.ResolveReference(u).String(), true
 }
