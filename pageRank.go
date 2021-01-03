@@ -17,9 +17,15 @@ func PageRank(links map[string][]string) {
 	var filteredLinks = filterLinks(links)
 	var indexMap = buildIndexMap(filteredLinks)
 	var A = buildAdjMatrix(indexMap, filteredLinks)
+	fmt.Printf("%v\n", A)
 	var S = make([]float32, len(filteredLinks))
 	for i := 0; i < len(S); i++ {
-		S[i] = 0.15 / float32(len(S))
+		S[i] = 1.0 / float32(len(S))
+	}
+
+	var ONE = make([]float32, len(S))
+	for i := 0; i < len(ONE); i++ {
+		ONE[i] = 0.15 / float32(len(ONE))
 	}
 
 	var delta float32 = 999.0
@@ -30,8 +36,13 @@ func PageRank(links map[string][]string) {
 	for iterations < 10 {
 		copy(oldR, R)
 		mvMult(A, R, oldR)
-		d := vecSum(oldR) - vecSum(R)
-		addScaledVec(R, d, S)
+		//vecScale(0.85, R)
+		//vecAdd(R, ONE)
+
+		//mvMult(A, R, oldR)
+		//d := vecSum(oldR) - vecSum(R)
+		//fmt.Printf("D: %v\n", d)
+		//addScaledVec(R, d, S)
 		delta = vecDist(oldR, R)
 		fmt.Printf("DELTA: %v\n", delta)
 		iterations++
@@ -84,7 +95,8 @@ func buildAdjMatrix(indexMap map[string]int, links map[string][]string) [][]floa
 		websiteID := indexMap[website]
 		for _, outgoing := range outgoingLinks {
 			outgoingID := indexMap[outgoing]
-			matrix[websiteID][outgoingID] += 1.0 / float32(len(outgoingLinks))
+			//matrix[websiteID][outgoingID] += 1.0 / float32(len(outgoingLinks))
+			matrix[outgoingID][websiteID] += 1.0 / float32(len(outgoingLinks))
 		}
 	}
 
@@ -122,5 +134,17 @@ func vecSum(v []float32) (sum float32) {
 func addScaledVec(v1 []float32, scalar float32, v2 []float32) {
 	for i := range v1 {
 		v1[i] += scalar * v2[i]
+	}
+}
+
+func vecScale(scalar float32, v []float32) {
+	for i := range v {
+		v[i] *= scalar
+	}
+}
+
+func vecAdd(v1 []float32, v2 []float32) {
+	for i := range v1 {
+		v1[i] += v2[i]
 	}
 }
