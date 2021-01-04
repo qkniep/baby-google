@@ -17,7 +17,6 @@ func PageRank(links map[string][]string) {
 	var filteredLinks = filterLinks(links)
 	var indexMap = buildIndexMap(filteredLinks)
 	var A = buildAdjMatrix(indexMap, filteredLinks)
-	fmt.Printf("%v\n", A)
 	var S = make([]float32, len(filteredLinks))
 	for i := 0; i < len(S); i++ {
 		S[i] = 1.0 / float32(len(S))
@@ -40,14 +39,10 @@ func PageRank(links map[string][]string) {
 
 		//mvMult(A, R, oldR)
 		//d := vecSum(oldR) - vecSum(R)
-		//fmt.Printf("D: %v\n", d)
 		//addScaledVec(R, d, S)
 		delta = vecDist(oldR, R)
-		fmt.Printf("DELTA: %v\n", delta)
 		iterations++
 	}
-
-	fmt.Printf("after %v iterations: %v\n", iterations, R)
 
 	// print websites by rank
 	var pageRanks []webRank
@@ -55,7 +50,11 @@ func PageRank(links map[string][]string) {
 		pageRanks = append(pageRanks, webRank{url: url, rank: R[id]})
 	}
 	sort.Slice(pageRanks, func(i, j int) bool { return pageRanks[i].rank > pageRanks[j].rank })
-	fmt.Printf("%v\n", pageRanks)
+	for _, wr := range pageRanks {
+		fmt.Printf("%v - %v\n", wr.url, wr.rank)
+	}
+
+	fmt.Printf("Number of iterations until convergence: %v\n", iterations)
 }
 
 func filterLinks(links map[string][]string) map[string][]string {

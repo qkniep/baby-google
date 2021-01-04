@@ -6,7 +6,9 @@ import (
 	"strings"
 )
 
-// TODO
+// Resolve converts a relative URL into an absolute URL, using website as the starting point.
+// Returns the absolute URL and a boolean which indicates success.
+// TODO: Perform path normailzation (https://www.wikiwand.com/en/URI_normalization).
 func Resolve(website string, relative string) (string, bool) {
 	u,err := url.Parse(strings.TrimSpace(relative))
 	if err != nil {
