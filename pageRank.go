@@ -6,7 +6,7 @@ import (
 	"sort"
 )
 
-const EPS = 0.000001
+const EPS = 0.0000001
 
 type webRank struct {
 	url  string
@@ -32,12 +32,11 @@ func PageRank(links map[string][]string) {
 	var R, oldR = make([]float32, len(S)), make([]float32, len(S))
 	copy(R, S)
 	iterations := 0
-	//for delta > EPS {
-	for iterations < 10 {
+	for delta > EPS {
 		copy(oldR, R)
 		mvMult(A, R, oldR)
-		//vecScale(0.85, R)
-		//vecAdd(R, ONE)
+		vecScale(0.85, R)
+		vecAdd(R, ONE)
 
 		//mvMult(A, R, oldR)
 		//d := vecSum(oldR) - vecSum(R)
