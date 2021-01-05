@@ -1,5 +1,7 @@
 package main
 
+// Performs a breadth-first search of the web graph, starting with a fixed set of seed pages.
+
 import (
 	//"fmt"
 	"golang.org/x/net/html"
@@ -9,9 +11,9 @@ import (
 	"strings"
 )
 
-const THREADS = 16
-var DO_NOT_DOWNLOAD = [...]string{"js", "png", "jpg", "jpeg", "webp", "zip"}
-var STARTPAGES = []string{
+const numGoroutines = 16
+var doNotDownload = [...]string{"js", "png", "jpg", "jpeg", "webp", "zip"}
+var startpages = []string{
 	"https://wikipedia.org",
 	"https://reddit.com",
 	"https://yahoo.com",
@@ -22,7 +24,7 @@ var STARTPAGES = []string{
 	"https://bbc.com",
 	"https://newyorker.com",
 	"https://apnews.com",
-	"https://c-span.org",
+	"https://nature.com",
 	"https://economist.com",
 	"https://wired.com",
 	"https://mashable.com",
@@ -37,14 +39,14 @@ type scrapeResult struct {
 
 func main() {
 	var current []string
-	var toVisit = STARTPAGES
+	var toVisit = startpages
 	var visited = make(map[string]bool, 0)
 	//var bytesDownloaded int64
 	var links = make(map[string][]string, 0)
 
-	for len(toVisit) >= THREADS && len(visited) < 500 {
-		messages := make(chan scrapeResult, THREADS)
-		current, toVisit = toVisit[0:THREADS], toVisit[THREADS:]
+	for len(toVisit) >= numGoroutines && len(visited) < 200 {
+		messages := make(chan scrapeResult, numGoroutines)
+		current, toVisit = toVisit[0:numGoroutines], toVisit[numGoroutines:]
 
 		// ensure no duplicate visits
 		for i := range current {
@@ -55,12 +57,12 @@ func main() {
 		}
 
 		// starting scraping in goroutines
-		for i := 0; i < THREADS; i++ {
+		for i := 0; i < numGoroutines; i++ {
 			go func(x int) { messages <- scrapeLinksFromPage(current[x]) }(i)
 		}
 
 		// receive and merge results
-		for i := 0; i < THREADS; i++ {
+		for i := 0; i < numGoroutines; i++ {
 			res := <-messages
 
 			for _, link := range res.links {
@@ -75,6 +77,7 @@ func main() {
 	PageRank(links)
 }
 
+// Downloads the website and parses the HTML to find anchor tags.
 func scrapeLinksFromPage(website string) scrapeResult {
 	var links []string
 
@@ -113,17 +116,14 @@ func scrapeLinksFromPage(website string) scrapeResult {
 	loop:
 	for {
 		tt := htmlTokens.Next()
-		//fmt.Printf("%T", tt)
 		switch tt {
 		case html.ErrorToken:
-			//fmt.Println("End")
 			break loop
 		case html.TextToken:
 			//fmt.Println(tt)
 		case html.StartTagToken:
 			t := htmlTokens.Token()
-			isAnchor := t.Data == "a"
-			if isAnchor {
+			if t.Data == "a" {
 				for _, attr := range t.Attr {
 					if attr.Key == "href" {
 						absURL, success := Resolve(website, attr.Val)
