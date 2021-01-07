@@ -6,7 +6,7 @@ import (
 	"sort"
 )
 
-const EPS = 1e-7
+const EPS = 0.0000001
 
 type webRank struct {
 	url  string
@@ -22,6 +22,11 @@ func PageRank(links map[string][]string) {
 		S[i] = 1.0 / float32(len(S))
 	}
 
+	var ONE = make([]float32, len(S))
+	for i := 0; i < len(ONE); i++ {
+		ONE[i] = 0.15 / float32(len(ONE))
+	}
+
 	var delta float32 = 999.0
 	var R, oldR = make([]float32, len(S)), make([]float32, len(S))
 	copy(R, S)
@@ -30,7 +35,11 @@ func PageRank(links map[string][]string) {
 		copy(oldR, R)
 		mvMult(A, R, oldR)
 		vecScale(0.85, R)
-		addScaledVec(R, 0.15, S)
+		vecAdd(R, ONE)
+
+		//mvMult(A, R, oldR)
+		//d := vecSum(oldR) - vecSum(R)
+		//addScaledVec(R, d, S)
 		delta = vecDist(oldR, R)
 		iterations++
 	}
@@ -41,7 +50,7 @@ func PageRank(links map[string][]string) {
 		pageRanks = append(pageRanks, webRank{url: url, rank: R[id]})
 	}
 	sort.Slice(pageRanks, func(i, j int) bool { return pageRanks[i].rank > pageRanks[j].rank })
-	for _, wr := range pageRanks {
+	for _, wr := range pageRanks[:10] {
 		fmt.Printf("%v - %v\n", wr.url, wr.rank)
 	}
 
@@ -105,7 +114,6 @@ func mvMult(M [][]float32, newV []float32, oldV []float32) {
 	}
 }
 
-// Distance of two vectors
 func vecDist(v1 []float32, v2 []float32) (sum float32) {
 	for i, val := range v1 {
 		sum += float32(math.Abs(float64(val - v2[i])))

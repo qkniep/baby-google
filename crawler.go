@@ -1,35 +1,22 @@
 package main
 
-// Performs a breadth-first search of the web graph, starting with a fixed set of seed pages.
-
 import (
-	//"fmt"
+	"fmt"
 	"golang.org/x/net/html"
-	"io/ioutil"
 	"log"
-	"net/http"
+	"github.com/valyala/fasthttp"
+	"runtime"
 	"strings"
+	"time"
 )
 
-const numGoroutines = 16
-var doNotDownload = [...]string{"js", "png", "jpg", "jpeg", "webp", "zip"}
-var startpages = []string{
+const THREADS = 64
+var DO_NOT_DOWNLOAD = [...]string{"js", "png", "jpg", "jpeg", "webp", "zip"}
+var STARTPAGES = []string{
 	"https://wikipedia.org",
 	"https://reddit.com",
 	"https://yahoo.com",
 	"https://github.com",
-	"https://msn.com",
-	"https://sueddeutsche.de",
-	"https://nytimes.com",
-	"https://bbc.com",
-	"https://newyorker.com",
-	"https://apnews.com",
-	"https://nature.com",
-	"https://economist.com",
-	"https://wired.com",
-	"https://mashable.com",
-	"https://quora.com",
-	"https://news.ycombinator.com",
 }
 
 type scrapeResult struct {
@@ -38,59 +25,45 @@ type scrapeResult struct {
 }
 
 func main() {
-	var current []string
-	var toVisit = startpages
+	numcpu := runtime.NumCPU()
+	runtime.GOMAXPROCS(numcpu)
+
+	var toVisit = STARTPAGES
 	var visited = make(map[string]bool, 0)
 	//var bytesDownloaded int64
 	var links = make(map[string][]string, 0)
 
-	for len(toVisit) >= numGoroutines && len(visited) < 200 {
-		messages := make(chan scrapeResult, numGoroutines)
-		current, toVisit = toVisit[0:numGoroutines], toVisit[numGoroutines:]
+	var messages = make(chan scrapeResult, THREADS)
+	var currentlyCrawling = 0
 
-		// ensure no duplicate visits
-		for i := range current {
-			for visited[current[i]] {
-				current[i], toVisit = toVisit[0], toVisit[1:]
-			}
-			visited[current[i]] = true
-		}
-
-		// starting scraping in goroutines
-		for i := 0; i < numGoroutines; i++ {
-			go func(x int) { messages <- scrapeLinksFromPage(current[x]) }(i)
-		}
-
-		// receive and merge results
-		for i := 0; i < numGoroutines; i++ {
+	for len(links) < 1000 {
+		if currentlyCrawling > 0 {
 			res := <-messages
+			links[res.website] = append(links[res.website], res.links...)
+			toVisit = append(toVisit, res.links...)
+			currentlyCrawling--
+		}
 
-			for _, link := range res.links {
-				links[res.website] = append(links[res.website], link)
-				if !visited[link] {
-					toVisit = append(toVisit, link)
-				}
+		for len(toVisit) > 0 && currentlyCrawling < THREADS {
+			website := toVisit[0]
+			toVisit = toVisit[1:]
+			if visited[website] {
+				continue
 			}
+			visited[website] = true
+			go func(url string) { messages <- scrapeLinksFromPage(url) }(website)
+			currentlyCrawling++
 		}
 	}
 
+	fmt.Println("Calculating PageRank...")
 	PageRank(links)
 }
 
-// Downloads the website and parses the HTML to find anchor tags.
 func scrapeLinksFromPage(website string) scrapeResult {
 	var links []string
 
-	// download website
-	res, err := http.Get(website)
-	if err != nil {
-		log.Println(err)
-		return scrapeResult{website, links}
-	}
-	defer res.Body.Close()
-
-	// store body in string to count bytes
-	body, err := ioutil.ReadAll(res.Body)
+	_, body, err := fasthttp.GetTimeout(nil, website, time.Duration(time.Millisecond*500))
 	if err != nil {
 		log.Println(err)
 		return scrapeResult{website, links}
@@ -116,11 +89,13 @@ func scrapeLinksFromPage(website string) scrapeResult {
 	loop:
 	for {
 		tt := htmlTokens.Next()
+		//fmt.Printf("%T", tt)
 		switch tt {
 		case html.ErrorToken:
 			break loop
 		case html.TextToken:
 			//fmt.Println(tt)
+			// TODO parse website content here
 		case html.StartTagToken:
 			t := htmlTokens.Token()
 			if t.Data == "a" {
