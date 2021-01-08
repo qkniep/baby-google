@@ -2,64 +2,69 @@ package main
 
 import (
 	"fmt"
+	"gonum.org/v1/gonum/mat"
 	"math"
 	"sort"
+	"time"
 )
 
-const EPS = 0.0000001
+const EPS = 1e-7
 
 type webRank struct {
 	url  string
-	rank float32
+	rank float64
 }
 
+// Calculates the PageRank for all non-dangling sites based on the links map.
+// Currently uses dense adjacency matrix.
+// Runtime is O(n^2), but could be O(n) using sparse matrix multiplication.
 func PageRank(links map[string][]string) {
 	var filteredLinks = filterLinks(links)
 	var indexMap = buildIndexMap(filteredLinks)
 	var A = buildAdjMatrix(indexMap, filteredLinks)
-	var S = make([]float32, len(filteredLinks))
-	for i := 0; i < len(S); i++ {
-		S[i] = 1.0 / float32(len(S))
+	var start = time.Now()
+
+	var initialRanks = make([]float64, len(filteredLinks))
+	for i := 0; i < len(initialRanks); i++ {
+		initialRanks[i] = 1.0 / float64(len(initialRanks))
 	}
 
-	var ONE = make([]float32, len(S))
-	for i := 0; i < len(ONE); i++ {
-		ONE[i] = 0.15 / float32(len(ONE))
+	var oneData = make([]float64, len(initialRanks))
+	for i := 0; i < len(oneData); i++ {
+		oneData[i] = 0.15 / float64(len(oneData))
 	}
 
-	var delta float32 = 999.0
-	var R, oldR = make([]float32, len(S)), make([]float32, len(S))
-	copy(R, S)
+	var delta float64 = math.Inf(1)
+	var R = mat.NewVecDense(len(initialRanks), initialRanks)
+	var ONE = mat.NewVecDense(len(oneData), oneData)
 	iterations := 0
 	for delta > EPS {
-		copy(oldR, R)
-		mvMult(A, R, oldR)
-		vecScale(0.85, R)
-		vecAdd(R, ONE)
-
-		//mvMult(A, R, oldR)
-		//d := vecSum(oldR) - vecSum(R)
-		//addScaledVec(R, d, S)
-		delta = vecDist(oldR, R)
+		oldR := mat.VecDenseCopyOf(R)
+		R.MulVec(A, oldR)
+		R.AddScaledVec(ONE, 0.85, R)
+		oldR.SubVec(oldR, R)
+		delta = mat.Norm(oldR, 1)
 		iterations++
 	}
 
 	// print websites by rank
 	var pageRanks []webRank
 	for url, id := range indexMap {
-		pageRanks = append(pageRanks, webRank{url: url, rank: R[id]})
+		pageRanks = append(pageRanks, webRank{url: url, rank: initialRanks[id]})
 	}
 	sort.Slice(pageRanks, func(i, j int) bool { return pageRanks[i].rank > pageRanks[j].rank })
-	for _, wr := range pageRanks[:10] {
+	for _, wr := range pageRanks[:3] {
 		fmt.Printf("%v - %v\n", wr.url, wr.rank)
 	}
 
+	secs := time.Since(start).Seconds()
+	fmt.Printf("Calculated the PageRank for %v/%v pages in %.2f seconds.\n", len(pageRanks), len(links), secs)
 	fmt.Printf("Number of iterations until convergence: %v\n", iterations)
 }
 
+// Filter out dangling links, i.e. links which point to no pages in our crawled set.
 func filterLinks(links map[string][]string) map[string][]string {
-	// filter dangling links
-	filteredLinks := make(map[string][]string, 0)
+	var filteredLinks = make(map[string][]string, 0)
 	for link, outgoingLinks := range links {
 		for _, outgoing := range outgoingLinks {
 			_, found := links[outgoing]
@@ -72,77 +77,23 @@ func filterLinks(links map[string][]string) map[string][]string {
 }
 
 func buildIndexMap(links map[string][]string) map[string]int {
-	indexMap := make(map[string]int, 0)
-	pageID := 0
+	var indexMap = make(map[string]int, 0)
+	var pageID = 0
 	for website := range links {
 		indexMap[website] = pageID
 		pageID++
 	}
-
 	return indexMap
 }
 
-func buildAdjMatrix(indexMap map[string]int, links map[string][]string) [][]float32 {
-	matrix := make([][]float32, len(links))
-	for i := range matrix {
-		matrix[i] = make([]float32, len(links))
-	}
-
-	// add link weights
+func buildAdjMatrix(indexMap map[string]int, links map[string][]string) *mat.Dense {
+	var matrix = make([]float64, len(links)*len(links))
 	for website, outgoingLinks := range links {
 		websiteID := indexMap[website]
 		for _, outgoing := range outgoingLinks {
 			outgoingID := indexMap[outgoing]
-			//matrix[websiteID][outgoingID] += 1.0 / float32(len(outgoingLinks))
-			matrix[outgoingID][websiteID] += 1.0 / float32(len(outgoingLinks))
+			matrix[outgoingID*len(links)+websiteID] += 1.0 / float64(len(outgoingLinks))
 		}
 	}
-
-	return matrix
-}
-
-// Matrix-Vector Multiplication
-// Assumes newV and oldV to be equal at the start.
-// Overwrites the values in newV.
-func mvMult(M [][]float32, newV []float32, oldV []float32) {
-	for i := range oldV {
-		var sum float32 = 0.0
-		for j, matVal := range M[i] {
-			sum += oldV[j] * matVal
-		}
-		newV[i] = sum
-	}
-}
-
-func vecDist(v1 []float32, v2 []float32) (sum float32) {
-	for i, val := range v1 {
-		sum += float32(math.Abs(float64(val - v2[i])))
-	}
-	return
-}
-
-func vecSum(v []float32) (sum float32) {
-	for _, val := range v {
-		sum += float32(math.Abs(float64(val)))
-	}
-	return
-}
-
-// Calculates v1 + scalar * v2 and stores it into v1.
-func addScaledVec(v1 []float32, scalar float32, v2 []float32) {
-	for i := range v1 {
-		v1[i] += scalar * v2[i]
-	}
-}
-
-func vecScale(scalar float32, v []float32) {
-	for i := range v {
-		v[i] *= scalar
-	}
-}
-
-func vecAdd(v1 []float32, v2 []float32) {
-	for i := range v1 {
-		v1[i] += v2[i]
-	}
+	return mat.NewDense(len(links), len(links), matrix)
 }
