@@ -9,16 +9,16 @@ import (
 	"time"
 )
 
-const ConvergenceThreshold = 1e-7
+const convergenceThreshold = 1e-7
 
 type websiteRank struct {
 	url  string
 	rank float64
 }
 
-// Calculates the PageRank for all non-dangling sites based on the links map.
-// Currently uses dense adjacency matrix.
-// Runtime is O(n^2), but could be O(n) using sparse matrix multiplication.
+// PageRank is calculated for all non-dangling sites based on the links map.
+// Assumes the adjacency matrix of the link graph is sparse.
+// Uses this fact to speed up matrix-vector multiplication from O(n^2) to O(n).
 func PageRank(links map[string][]string) {
 	var filteredLinks = filterLinks(links)
 	var indexMap = buildIndexMap(filteredLinks)
@@ -39,7 +39,7 @@ func PageRank(links map[string][]string) {
 	var R = mat.NewVecDense(len(initialRanks), initialRanks)
 	var ONE = mat.NewVecDense(len(oneData), oneData)
 	iterations := 0
-	for delta > ConvergenceThreshold {
+	for delta > convergenceThreshold {
 		oldR := mat.VecDenseCopyOf(R)
 		R = sparse.MulMatVec(false, 1.0, A, R, nil)
 		R.AddScaledVec(ONE, 0.85, R)
@@ -63,7 +63,7 @@ func PageRank(links map[string][]string) {
 	fmt.Printf("Number of iterations until convergence: %v\n", iterations)
 }
 
-// Filter out dangling links, i.e. links which point to no pages in our crawled set.
+// Filters out dangling links, i.e. links which point to no pages in our crawled set.
 func filterLinks(links map[string][]string) map[string][]string {
 	var filteredLinks = make(map[string][]string, 0)
 	for link, outgoingLinks := range links {
@@ -93,7 +93,7 @@ func buildAdjMatrix(indexMap map[string]int, links map[string][]string) *sparse.
 		websiteID := indexMap[website]
 		for _, outgoing := range outgoingLinks {
 			outgoingID := indexMap[outgoing]
-			newValue := matrix.At(outgoingID, websiteID) + 1.0 / float64(len(outgoingLinks))
+			newValue := matrix.At(outgoingID, websiteID) + 1.0/float64(len(outgoingLinks))
 			matrix.Set(outgoingID, websiteID, newValue)
 		}
 	}
