@@ -10,6 +10,7 @@ import (
 	"golang.org/x/net/html"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"os"
 	"runtime"
 	"strings"
@@ -46,8 +47,20 @@ func main() {
 	//var toVisit = startpages
 	var visited map[string]bool
 	load(&visited, visitedFile)
-	//var bytesDownloaded int64
+	var bytesDownloaded int64
 	var links = make(map[string][]string, 0)
+
+	for i := 0; i < len(toVisit); i++ {
+		if visited[toVisit[i]] {
+			toVisit[i] = toVisit[len(toVisit)-1]
+			toVisit = toVisit[:len(toVisit)-1]
+			i--
+		}
+	}
+	rand.Seed(time.Now().UnixNano())
+	rand.Shuffle(len(toVisit), func(i, j int) {
+		toVisit[i], toVisit[j] = toVisit[j], toVisit[i]
+	})
 
 	var messages = make(chan scrapeResult, numGoroutines)
 	var currentlyCrawling = 0
@@ -60,7 +73,6 @@ func main() {
 		WriteTimeout: 2 * time.Second,
 	}
 
-	var bytesDownloaded int
 	start := time.Now()
 
 	for len(links) < pagesToCrawl {
@@ -69,7 +81,7 @@ func main() {
 			res := <-messages
 			links[res.website] = append(links[res.website], res.links...)
 			toVisit = append(toVisit, res.links...)
-			bytesDownloaded += res.size
+			bytesDownloaded += int64(res.size)
 			currentlyCrawling--
 		}
 
