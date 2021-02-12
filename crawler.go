@@ -6,63 +6,58 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"fmt"
+	"github.com/temoto/robotstxt"
 	"github.com/valyala/fasthttp"
-	"golang.org/x/net/html"
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/url"
 	"os"
-	"runtime"
 	"strings"
 	"time"
 )
 
 const (
 	userAgent = "Baby-Google"
-	pagesToCrawl = 1000
-	numGoroutines = 16
+	pagesToCrawl = 500
+	numGoroutines = 32
+	dataDir = "data"
 	toVisitFile = "toVisit.gob"
 	visitedFile = "visited.gob"
 )
 
 //var doNotDownload = [...]string{"js", "png", "jpg", "jpeg", "webp", "zip"}
-var startpages = []string{
-	"https://wikipedia.org",
-	"https://reddit.com",
-	"https://yahoo.com",
-	"https://msn.com",
-}
 
-type scrapeResult struct {
-	website string
-	links   []string
-	size    int
-}
+/*func main() {
+	var visited map[string]bool
+	load(&visited, visitedFile)
+	var links = make(map[string][]string, 0)
+
+	for site := range visited {
+		res := scrapeLinksFromPage(site)
+		links[res.Website] = append(links[res.Website], res.Links...)
+	}
+
+	fmt.Println("Calculating PageRank...")
+	PageRank(links)
+}*/
 
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-
 	var toVisit []string
 	load(&toVisit, toVisitFile)
 	//var toVisit = startpages
 	var visited map[string]bool
 	load(&visited, visitedFile)
+	//var visited = make(map[string]bool, 0)
 	var bytesDownloaded int64
 	var links = make(map[string][]string, 0)
 
-	for i := 0; i < len(toVisit); i++ {
-		if visited[toVisit[i]] {
-			toVisit[i] = toVisit[len(toVisit)-1]
-			toVisit = toVisit[:len(toVisit)-1]
-			i--
-		}
-	}
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(toVisit), func(i, j int) {
 		toVisit[i], toVisit[j] = toVisit[j], toVisit[i]
 	})
 
-	var messages = make(chan scrapeResult, numGoroutines)
+	var messages = make(chan ScrapeResult, numGoroutines)
 	var currentlyCrawling = 0
 
 	var client = &fasthttp.Client{
@@ -76,15 +71,6 @@ func main() {
 	start := time.Now()
 
 	for len(links) < pagesToCrawl {
-		// wait for on goroutine to finish
-		if currentlyCrawling > 0 {
-			res := <-messages
-			links[res.website] = append(links[res.website], res.links...)
-			toVisit = append(toVisit, res.links...)
-			bytesDownloaded += int64(res.size)
-			currentlyCrawling--
-		}
-
 		// assign new tasks until max. number of goroutines is reached
 		for currentlyCrawling < numGoroutines && len(toVisit) > 0 {
 			website := toVisit[0]
@@ -103,11 +89,32 @@ func main() {
 		} else if bytesDownloaded < 1e12 {
 			fmt.Printf("Downloaded: %.1f GB\n", float32(bytesDownloaded) / 1e9)
 		}
-		fmt.Println("Visited pages:", len(visited))
-		fmt.Println("Number of sites to vist:", len(toVisit))
-		fmt.Println("Currently crawling:", currentlyCrawling)
-		fmt.Printf("Average crawl rate: %.2f pages/sec\n", float64(len(visited)) / time.Since(start).Seconds())
+		fmt.Println("Crawled pages:", len(links))
+		fmt.Println("Sites to vist:", len(toVisit))
+		fmt.Printf("Average crawl rate: %.2f pages/sec\n", float64(len(links)) / time.Since(start).Seconds())
 		fmt.Println()
+
+		// wait for one goroutine to finish
+		res := <-messages
+		if res.Err {
+			toVisit = append(toVisit, res.Website)
+			visited[res.Website] = false
+		} else {
+			links[res.Website] = append(links[res.Website], res.Links...)
+			toVisit = append(toVisit, res.Links...)
+			bytesDownloaded += int64(res.Size)
+			fmt.Println("Finished crawling:", res.Website)
+		}
+		currentlyCrawling--
+	}
+
+	// remove duplicates from toVisit
+	for i := 0; i < len(toVisit); i++ {
+		if visited[toVisit[i]] {
+			toVisit[i] = toVisit[len(toVisit)-1]
+			toVisit = toVisit[:len(toVisit)-1]
+			i--
+		}
 	}
 
 	dump(toVisit, toVisitFile)
@@ -117,56 +124,92 @@ func main() {
 	PageRank(links)
 }
 
-func scrapeLinksFromPage(client *fasthttp.Client, website string) scrapeResult {
-	var links []string
+/*func scrapeLinksFromPage(website string) ScrapeResult {
+	hash := sha256.Sum256([]byte(website))
+	filename := hex.EncodeToString(hash[:])
+	file, err := os.Open(dataDir + "/" + filename)
+	if err != nil {
+		return ScrapeResult{website, []string{}, 0, true}
+	}
 
+	return ScrapeLinksFromHTML(file, website)
+}*/
+
+func grabRobotsTxt(client *fasthttp.Client, website string) (r *robotstxt.RobotsData, err error) {
+	// get robots.txt URL
+	siteURL, err := url.Parse(website)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+	robotsURL := siteURL.Scheme + "://" + siteURL.Host + "/robots.txt"
+
+	// get robots.txt file from disk or website
+	tryLoadPageFromDisk(robotsURL)
+	status, body, err := client.Get(nil, robotsURL)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+	dumpPageToDisk(robotsURL, body)
+	return robotstxt.FromStatusAndBytes(status, body)
+}
+
+func scrapeLinksFromPage(client *fasthttp.Client, website string) ScrapeResult {
+	// download & check robots.txt
+	robots, err := grabRobotsTxt(client, website)
+	if err != nil {
+		log.Println(err)
+		return ScrapeResult{website, []string{}, 0, true}
+	}
+	siteURL, err := url.Parse(website)
+	if err != nil {
+		log.Println(err)
+		return ScrapeResult{website, []string{}, 0, true}
+	}
+	group := robots.FindGroup(userAgent)
+	if !group.Test(siteURL.Path) {
+		log.Println("Access disallowed by robots.txt")
+		return ScrapeResult{website, []string{}, 0, false}
+	}
+
+	// download website body
 	_, body, err := client.Get(nil, website)
 	if err != nil {
 		log.Println(err)
-		return scrapeResult{website, links, 0}
+		return ScrapeResult{website, []string{}, 0, true}
 	}
 	dumpPageToDisk(website, body)
 	bodyReader := strings.NewReader(string(body))
 
-	// search anchor tags
-	htmlTokens := html.NewTokenizer(bodyReader)
-loop:
-	for {
-		tt := htmlTokens.Next()
-		switch tt {
-		case html.ErrorToken:
-			break loop
-		case html.TextToken:
-			// TODO parse website content here
-		case html.StartTagToken:
-			t := htmlTokens.Token()
-			if t.Data == "a" {
-				for _, attr := range t.Attr {
-					if attr.Key == "href" {
-						absURL, success := Resolve(website, attr.Val)
-						if success {
-							links = append(links, absURL)
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return scrapeResult{website, links, len(body)}
+	// scrape website for anchor tags (links)
+	res := ScrapeLinksFromHTML(bodyReader, website)
+	return ScrapeResult{res.Website, res.Links, len(body), false}
 }
 
 func dumpPageToDisk(website string, body []byte) {
 	hash := sha256.Sum256([]byte(website))
 	filename := hex.EncodeToString(hash[:])
-	err := ioutil.WriteFile("data/" + filename, body, 0644)
+	err := ioutil.WriteFile(dataDir + "/" + filename, body, 0644)
 	if err != nil {
 		log.Panicf("Error: Failed to write website %v to disk.\n", website)
 	}
 }
 
+func tryLoadPageFromDisk(website string) ([]byte, error) {
+	hash := sha256.Sum256([]byte(website))
+	filename := hex.EncodeToString(hash[:])
+	file, err := os.Open(dataDir + "/" + filename)
+	if err != nil {
+		return []byte{}, err
+	}
+
+	return ioutil.ReadAll(file)
+}
+
 func dump(obj interface{}, filename string) {
-	f, err := os.Create("data/" + filename)
+	f, err := os.Create(dataDir + "/" + filename)
+	defer f.Close()
 	if err != nil {
 		log.Panicf("Error: Failed to create file %v.\n", filename)
 	}
@@ -179,7 +222,8 @@ func dump(obj interface{}, filename string) {
 }
 
 func load(obj interface{}, filename string) {
-	f, err := os.Open("data/" + filename)
+	f, err := os.Open(dataDir + "/" + filename)
+	defer f.Close()
 	if err != nil {
 		log.Panicf("Error: Failed to open file %v.\n", filename)
 	}
