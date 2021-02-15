@@ -207,30 +207,30 @@ func tryLoadPageFromDisk(website string) ([]byte, error) {
 	return ioutil.ReadAll(file)
 }
 
+// Dump any type of Go object into a gob file of the given name.
 func dump(obj interface{}, filename string) {
 	f, err := os.Create(dataDir + "/" + filename)
-	defer f.Close()
 	if err != nil {
 		log.Panicf("Error: Failed to create file %v.\n", filename)
 	}
+	defer f.Close()
 	w := bufio.NewWriter(f)
 	enc := gob.NewEncoder(w)
-	err = enc.Encode(obj)
-	if err != nil {
+	if err := enc.Encode(obj); err != nil {
 		log.Panicf("Error: Failed to dump object %v to disk.\n", filename)
 	}
 }
 
+// Load any type of Go object from a gob file of the given name.
 func load(obj interface{}, filename string) {
 	f, err := os.Open(dataDir + "/" + filename)
-	defer f.Close()
 	if err != nil {
 		log.Panicf("Error: Failed to open file %v.\n", filename)
 	}
+	defer f.Close()
 	r := bufio.NewReader(f)
 	dec := gob.NewDecoder(r)
-	err = dec.Decode(obj)
-	if err != nil {
+	if err := dec.Decode(obj); err != nil {
 		log.Panicf("Error: Failed to load object %v from disk.\n", filename)
 	}
 }
