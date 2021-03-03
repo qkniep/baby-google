@@ -17,8 +17,8 @@ type websiteRank struct {
 }
 
 // PageRank is calculated for all non-dangling sites based on the links map.
-// Assumes the adjacency matrix of the link graph is sparse.
-// Uses this fact to speed up matrix-vector multiplication from O(n^2) to O(n).
+// Assumes the adjacency matrix of the link graph is sparse;
+// uses this fact to speed up matrix-vector multiplication from O(n^2) to O(n).
 func PageRank(links map[string][]string) {
 	var filteredLinks = filterLinks(links)
 	var indexMap = buildIndexMap(filteredLinks)
